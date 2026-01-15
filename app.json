@@ -1,0 +1,31 @@
+{
+  "name": "SENURA-MD",
+  "description": "Javascript WhatsApp bot made by Senura Herath",
+  "logo": "https://github.com/senuraya/Senura_Md/blob/main/images/ChatGPT%20Image%20Aug%2019,%202025,%2005_22_42%20PM.png?raw=true",
+  "keywords": ["SENURA-MD"],
+  "success_url": "/",
+
+  "env": {
+    "SESSION_ID": {
+      "description": "Put the session-id here.",
+      "required": true
+    },  
+
+    "ALIVE_IMG": {
+      "description": "Put your alive img here.",
+      "required": true
+    },
+    
+    "ALIVE_MSG": {
+      "description": "Put your alive msg here.",
+      "required": true
+    }   
+},
+
+     "buildpacks": [
+        {
+            "url": "https://github.com/heroku/heroku-buildpack-nodejs.git"
+        }
+     ],
+  "stack": "heroku-24"
+}
