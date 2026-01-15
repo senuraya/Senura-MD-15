@@ -1,96 +1,108 @@
 const { cmd } = require("../command");
-const puppeteer = require("puppeteer-extra");
-const StealthPlugin = require("puppeteer-extra-plugin-stealth");
-puppeteer.use(StealthPlugin());
+const axios = require("axios");
+const cheerio = require("cheerio");
 
-const pendingCineSearch = {};
+const pendingCine = {};
 
-// 1. සෙවීමේ ක්‍රියාවලිය
-async function searchCineMovies(query) {
-    const browser = await puppeteer.launch({ 
-        headless: true, 
-        args: ["--no-sandbox", "--disable-setuid-sandbox"] 
-    });
-    const page = await browser.newPage();
+// 1. සෙවුම් කාර්යය
+async function searchCine(q) {
     try {
-        await page.goto(`https://cinesubz.co/?s=${encodeURIComponent(query)}`, { waitUntil: "networkidle2" });
-        const results = await page.$$eval("article.item-movies", articles =>
-            articles.slice(0, 10).map((art, index) => {
-                const a = art.querySelector(".data h3 a");
-                return {
-                    id: index + 1,
-                    title: a?.textContent?.trim() || "",
-                    movieUrl: a?.href || ""
-                };
-            }).filter(m => m.title && m.movieUrl)
-        );
-        await browser.close();
+        const res = await axios.get(`https://cinesubz.co/?s=${encodeURIComponent(q)}`);
+        const $ = cheerio.load(res.data);
+        const results = [];
+        $("article.item-movies").each((i, el) => {
+            if (i < 10) {
+                results.push({
+                    title: $(el).find(".data h3 a").text().trim(),
+                    url: $(el).find(".data h3 a").attr("href"),
+                });
+            }
+        });
         return results;
-    } catch (e) {
-        await browser.close();
-        return [];
-    }
+    } catch (e) { return []; }
 }
 
-// 2. ඩවුන්ලෝඩ් ලින්ක් ලබාගැනීම
-async function getCineLinks(url) {
-    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox"] });
-    const page = await browser.newPage();
+// 2. Direct Link එක Extract කිරීම (Bypass Logic)
+async function getDirectLink(pageUrl) {
     try {
-        await page.goto(url, { waitUntil: "networkidle2" });
-        const dlLinks = await page.evaluate(() => {
-            const rows = Array.from(document.querySelectorAll('.links_table tbody tr'));
-            return rows.map(row => ({
-                quality: row.querySelector('strong')?.textContent.trim() || "HD",
-                size: row.cells[2]?.textContent.trim() || "N/A",
-                url: row.querySelector('a.button')?.href
-            })).filter(l => l.url);
-        });
-        await browser.close();
-        return dlLinks;
-    } catch (e) {
-        await browser.close();
-        return [];
-    }
+        // පළමු පිටුව (Movie Page)
+        const res1 = await axios.get(pageUrl);
+        const $1 = cheerio.load(res1.data);
+        const links = [];
+
+        const rows = $1(".links_table tbody tr");
+        for (let i = 0; i < rows.length; i++) {
+            const el = rows[i];
+            const quality = $1(el).find("strong").text().trim();
+            const size = $1(el).find("td").eq(2).text().trim();
+            const redirectUrl = $1(el).find("a.button").attr("href");
+
+            if (redirectUrl) {
+                // දෙවන පිටුව (Download/Redirect Page)
+                const res2 = await axios.get(redirectUrl);
+                const $2 = cheerio.load(res2.data);
+                
+                // Pixeldrain ලින්ක් එක සොයාගැනීම
+                const finalUrl = $2('a[href*="pixeldrain.com"]').attr("href");
+
+                if (finalUrl) {
+                    // Pixeldrain URL එක Direct Download URL එකක් බවට පත් කිරීම
+                    // https://pixeldrain.com/u/xxxxx -> https://pixeldrain.com/api/file/xxxxx?download
+                    const directDownload = finalUrl.replace("/u/", "/api/file/") + "?download";
+                    links.push({ quality, size, url: directDownload });
+                }
+            }
+        }
+        return links;
+    } catch (e) { return []; }
 }
 
 // --- Commands ---
 
 cmd({
     pattern: "cine",
-    react: "🎬",
+    react: "🎥",
     category: "download",
     filename: __filename
 }, async (conn, mek, m, { from, q, sender, reply }) => {
-    if (!q) return reply("චිත්‍රපටයේ නම ඇතුළත් කරන්න. උදා: .cine Joker");
-    reply("🔍 Cinesubz හි සොයමින් පවතී...");
-    
-    const results = await searchCineMovies(q);
-    if (results.length === 0) return reply("❌ කිසිවක් හමු වූයේ නැත.");
+    if (!q) return reply("*🎥 Cinesubz Downloader*\n\nභාවිතය: .cine [නම]");
+    reply("🔍 සොයමින් පවතී...");
+    const results = await searchCine(q);
+    if (results.length === 0) return reply("❌ ප්‍රතිඵල හමු වූයේ නැත.");
 
-    pendingCineSearch[sender] = { results, timestamp: Date.now() };
-    let msg = "*🎬 CINESUBZ SEARCH RESULTS*\n\n";
+    pendingCine[sender] = { results, timestamp: Date.now() };
+    let msg = "*🎬 CINESUBZ RESULTS*\n\n";
     results.forEach((res, i) => msg += `*${i+1}.* ${res.title}\n`);
-    msg += "\nඅංකය Reply කර ලින්ක් ලබාගන්න.";
+    msg += "\n*අංකය Reply කර චිත්‍රපටය ලබාගන්න.*";
     reply(msg);
 });
 
 cmd({
-    filter: (text, { sender }) => pendingCineSearch[sender] && !isNaN(text)
+    filter: (text, { sender }) => pendingCine[sender] && !isNaN(text)
 }, async (conn, mek, m, { body, sender, reply, from }) => {
     const index = parseInt(body) - 1;
-    const selected = pendingCineSearch[sender].results[index];
+    const selected = pendingCine[sender].results[index];
     if (!selected) return;
-    
-    delete pendingCineSearch[sender];
-    reply("🔗 ලින්ක් ලබාගනිමින් පවතී, මොහොතක් රැඳී සිටින්න...");
-    
-    const links = await getCineLinks(selected.movieUrl);
-    if (links.length === 0) return reply("❌ ලින්ක් හමු වූයේ නැත.");
 
-    let dlMsg = `*🎬 ${selected.title}*\n\n*Download Links:*\n`;
-    links.forEach((l, i) => {
-        dlMsg += `\n*${i+1}. Quality:* ${l.quality}\n*Size:* ${l.size}\n*URL:* ${l.url}\n`;
-    });
-    reply(dlMsg);
+    delete pendingCine[sender];
+    reply(`🔗 *${selected.title}* සඳහා ලින්ක් සකසමින් පවතී. මොහොතක් රැඳී සිටින්න...`);
+
+    const dlLinks = await getDirectLink(selected.url);
+    if (dlLinks.length === 0) return reply("❌ සෘජු ලින්ක් හමු වූයේ නැත.");
+
+    // පළමු ලින්ක් එක (සාමාන්‍යයෙන් හොඳම quality එක) යැවීම හෝ ලැයිස්තුව පෙන්වීම
+    const bestLink = dlLinks[0];
+    
+    reply(`⬇️ *පොඩ්ඩක් ඉන්න..* මම ඔයාට ${bestLink.quality} quality එකෙන් චිත්‍රපටය එවන්නම්.`);
+
+    try {
+        await conn.sendMessage(from, {
+            document: { url: bestLink.url },
+            mimetype: "video/mp4",
+            fileName: `${selected.title}.mp4`,
+            caption: `*🎬 ${selected.title}*\n\n*📊 Quality:* ${bestLink.quality}\n*💾 Size:* ${bestLink.size}\n\n*Enjoy! 🍿*`
+        }, { quoted: mek });
+    } catch (err) {
+        reply("❌ ගොනුව යැවීමේදී දෝෂයක් ඇති විය: " + err.message);
+    }
 });
