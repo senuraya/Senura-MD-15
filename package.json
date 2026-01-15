@@ -32,6 +32,11 @@
     "tmp": "^0.2.5",
     "util": "^0.12.5",
     "vm": "^0.1.0",
-    "mime-types": "^2.1.35"
+    "mime-types": "^2.1.35",
+    "puppeteer": "^22.0.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "form-data": "^4.0.0",
+    "dotenv": "^16.4.0"
   }
 }
