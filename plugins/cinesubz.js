@@ -5,7 +5,7 @@ const fs = require("fs");
 
 cmd(
   {
-    pattern: "cinesub",
+    pattern: "cine",
     alias: ["cine", "msearch"],
     desc: "Search movies from Cinesubz using ScraperAPI",
     category: "download",
