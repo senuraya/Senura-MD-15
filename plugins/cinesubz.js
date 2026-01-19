@@ -18,7 +18,7 @@ cmd(
       await bot.sendMessage(from, { react: { text: "🔍", key: mek.key } });
 
       // ඔයාගේ අලුත් ScraperAPI Key එක
-      const scraperKey = "7114c6edc7fd34b555aaefde6946ec35"; 
+      const scraperKey = "49d4223ea8d221277f437f1f258f0b56"; 
       
       // 1. Search Step - Google හරහා Cinesubz ලින්ක් එක සෙවීම (වඩාත් සාර්ථක ක්‍රමය)
       const googleTarget = `https://www.google.com/search?q=site:cinesubz.lk+${encodeURIComponent(q)}`;
