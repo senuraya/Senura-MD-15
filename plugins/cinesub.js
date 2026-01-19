@@ -1,63 +1,83 @@
 const { cmd } = require("../command");
 const axios = require("axios");
+const cheerio = require("cheerio");
+const fs = require("fs");
 
 cmd(
   {
     pattern: "cinesub",
-    alias: ["movie", "flic"],
-    desc: "Search movies using WP API",
+    alias: ["cine", "msearch"],
+    desc: "Search movies from Cinesubz using ScraperAPI",
     category: "download",
     filename: __filename,
   },
   async (bot, mek, m, { from, q, reply }) => {
     try {
-      if (!q) return reply("🎬 කරුණාකර චිත්‍රපටයේ නම ලබා දෙන්න.");
+      if (!q) return reply("🎬 කරුණාකර සෙවිය යුතු චිත්‍රපටයේ නම ලබා දෙන්න.");
 
       await bot.sendMessage(from, { react: { text: "🔍", key: mek.key } });
 
-      // WordPress API එක හරහා සෙවීම (Cinesub WP පාවිච්චි කරයි නම්)
-      const apiUrl = `https://cinesub.lk/wp-json/wp/v2/posts?search=${encodeURIComponent(q)}&_embed`;
+      // ඔයාගේ API Key එක Screenshots අනුව
+      const scraperKey = "7114c6edc7fd34b555aaefde6946ec35"; 
       
-      const response = await axios.get(apiUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0'
-        }
+      // 1. Google හරහා සෙවීම (Cinesubz සෘජු සෙවුමට වඩා සාර්ථකයි)
+      const googleTarget = `https://www.google.com/search?q=site:cinesubz.lk+${encodeURIComponent(q)}`;
+      const searchProxyUrl = `http://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(googleTarget)}&render=true`;
+
+      const { data: searchData } = await axios.get(searchProxyUrl);
+      const $ = cheerio.load(searchData);
+      
+      let movieLink = "";
+      $("a").each((i, el) => {
+          const href = $(el).attr("href");
+          if (href && href.includes("cinesubz.lk") && !href.includes("google.com")) {
+              const match = href.match(/https?:\/\/cinesubz\.lk\/[^\/]+\//);
+              if (match) {
+                  movieLink = match[0];
+                  return false; 
+              }
+          }
       });
 
-      const data = response.data;
+      if (!movieLink) return reply("❌ Cinesubz අඩවියේ එවැනි චිත්‍රපටයක් හමු නොවීය.");
 
-      if (!data || data.length === 0) {
-        await bot.sendMessage(from, { react: { text: "❌", key: mek.key } });
-        return reply("❌ කිසිදු ප්‍රතිඵලයක් හමු නොවීය.");
-      }
+      // 2. Movie Page එකෙන් දත්ත ගැනීම
+      const movieProxyUrl = `http://api.scraperapi.com?api_key=${scraperKey}&url=${encodeURIComponent(movieLink)}&render=true`;
+      const movieRes = await axios.get(movieProxyUrl);
+      const $$ = cheerio.load(movieRes.data);
 
-      // පළමු ප්‍රතිඵලය ලබා ගැනීම
-      const movie = data[0];
-      const title = movie.title.rendered;
-      const link = movie.link;
-      // Featured Image එක ලබා ගැනීම
-      const image = movie._embedded?.['wp:featuredmedia']?.[0]?.source_url || 'https://via.placeholder.com/500';
+      const title = $$("h1.entry-title").text().trim() || "Cinesubz Movie";
+      const poster = $$("img.wp-post-image").attr("src") || $$("div.poster img").attr("src");
+      const plot = $$(".entry-content p").first().text().trim() || "විස්තරයක් ලබාගත නොහැක.";
 
-      let caption = `🎬 *${title}*\n\n`;
-      caption += `🔗 *Link:* ${link}\n\n`;
-      caption += `💡 *Download:* .download [direct_link]`;
+      // Download Links (Pixeldrain/Mega) සෙවීම
+      let linksText = "🔗 *DOWNLOAD LINKS* 🔗\n\n";
+      let hasLinks = false;
+      $$("a").each((i, el) => {
+          const href = $$(el).attr("href");
+          if (href && (href.includes("pixeldrain.com") || href.includes("mega.nz"))) {
+              const linkName = $$(el).text().trim() || "Download";
+              linksText += `🚀 ${linkName}: ${href}\n\n`;
+              hasLinks = true;
+          }
+      });
 
-      await bot.sendMessage(
-        from,
-        {
-          image: { url: image },
-          caption: caption,
-        },
-        { quoted: mek }
-      );
+      // 3. Details Card එක යැවීම
+      let detailsMsg = `🅢🅔🅒🅡🅔🅣 🅜🅞🅥🅘🅔 🅒🅛🅤🅑 🅒🅘🅝🅔🅜 Cinema 🎦\n\n`;
+      detailsMsg += `📌 *Title:* ${title}\n\n`;
+      detailsMsg += `📝 *සාරාංශය:* \n${plot.substring(0, 350)}...\n\n`;
+      detailsMsg += hasLinks ? linksText : "⚠️ _බාගත කිරීමේ ලින්ක් හමු නොවීය._\n\n";
+
+      await bot.sendMessage(from, { 
+          image: { url: poster || 'https://via.placeholder.com/500' }, 
+          caption: detailsMsg 
+      }, { quoted: mek });
 
       await bot.sendMessage(from, { react: { text: "✅", key: mek.key } });
 
     } catch (e) {
-      console.log("CINESUB API ERROR:", e.message);
-      
-      // API එකත් වැඩ නැත්නම් සාමාන්‍ය වෙබ් පිටුවෙන් නැවත උත්සාහ කරන්න (Backup method)
-      reply("⚠️ API Error එකක් ආවා. සයිට් එකේ ආරක්ෂක පද්ධතිය මගින් බ්ලොක් කරනවා විය හැක. වෙනත් මූවී සයිට් එකක් (උදා: Baiscope) මේ විදිහටම හදන්නද?");
+      console.log("CINESUB ERROR:", e.message);
+      reply("❌ දත්ත ලබා ගැනීම අසාර්ථකයි. ScraperAPI ලිමිට් එක පරීක්ෂා කරන්න.");
     }
   }
 );
