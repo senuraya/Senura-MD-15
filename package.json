@@ -38,7 +38,7 @@
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "form-data": "^4.0.5",
     "dotenv": "^17.2.3",
-    "google-translate-api-x": "^10.7.2"
+    "google-translate-api-x": "^10.7.2",
     "@google/generative-ai": "^0.24.1"
   }
 }
