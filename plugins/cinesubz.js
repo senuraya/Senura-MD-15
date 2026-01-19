@@ -17,7 +17,7 @@ cmd(
 
       await bot.sendMessage(from, { react: { text: "🔍", key: mek.key } });
 
-      const scraperKey = "ඔයාගේ_SCRAPER_API_KEY_එක";
+      const scraperKey = "7114c6edc7fd34b555aaefde6946ec35";
       
       // ScraperAPI හරහා Cinesubz Search කරන URL එක
       const searchTarget = `https://cinesubz.lk/?s=${encodeURIComponent(q)}`;
